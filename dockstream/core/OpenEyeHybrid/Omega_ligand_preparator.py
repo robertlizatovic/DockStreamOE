@@ -177,7 +177,7 @@ class OmegaLigandPreparator(LigandPreparator, BaseModel):
     def _log_docking_progress(self, number_done, number_total):
         self._logger.log(get_progress_bar_string(number_done, number_total, length=65), _LE.INFO)
 
-    def generate3Dcoordinates(self):
+    def generate3Dcoordinates_old(self):
         """Method to generate 3D coordinates, in case the molecules have to be built from SMILES."""
 
         number_cores = self._get_number_cores()
@@ -237,7 +237,7 @@ class OmegaLigandPreparator(LigandPreparator, BaseModel):
 
                     for mol in mol_supplier:
                         if mol is not None and mol.HasProp("_Name"):
-
+                            self._logger.log("_Name property value: {}".format(mol.GetProp("_Name")), _LE.DEBUG)
                             lig_id, enum_id = mol.GetProp("_Name").split(":")
 
                             if idx == 0 or first_mol:
@@ -264,8 +264,84 @@ class OmegaLigandPreparator(LigandPreparator, BaseModel):
 
                 # remove temporary files
                 for path in tmp_output_dirs:
-                    shutil.rmtree(path)
+                    shutil.rmtree(path, ignore_errors=True)
                 self._log_docking_progress(number_done=sublists_submitted, number_total=number_sublists)
+
+        # check success and failure with embedding
+        failed = 0
+        for ligand in self.ligands:
+            if ligand.get_molecule() is None:
+                failed += 1
+                self._logger.log(f"Enumeration {ligand.get_identifier()} could not be embedded (smile: {ligand.get_smile()}).", _LE.DEBUG)
+        if failed > 0:
+            self._logger.log(f"It appears OMEGA could not embed all {len(self.ligands)} ligands ({failed} were not found) - compounds not embedded might be ignored at the docking stage.",_LE.WARNING)
+
+    def generate3Dcoordinates(self):
+        """Method to generate 3D coordinates, in case the molecules have to be built from SMILES."""
+
+        number_cores = self._get_number_cores()
+        start_indices, sublists = self._get_sublists_for_embedding(number_cores=number_cores)
+        number_sublists = len(sublists)
+        self._logger.log(f"Split ligands into {number_sublists} sublists for embedding.", _LE.DEBUG)
+
+        sublists_submitted = 0
+        slices_per_iteration = min(number_cores, number_sublists)
+        if isinstance(self.ligands[0].get_molecule(), Chem.Mol):
+            ligands_embedded = []
+            while sublists_submitted < len(sublists):
+                upper_bound_slice = min((sublists_submitted + slices_per_iteration), len(sublists))
+                cur_slice_start_indices = start_indices[sublists_submitted:upper_bound_slice]
+                cur_slice_sublists = sublists[sublists_submitted:upper_bound_slice]
+
+                # generate paths and initialize molecules (so that if they fail, this can be covered)
+                tmp_output_dirs, tmp_input_smi_paths, \
+                tmp_output_sdf_paths = self._generate_temporary_input_output_files(cur_slice_start_indices, cur_slice_sublists)
+
+                # run in parallel; wait for all subjobs to finish before proceeding
+                processes = []
+                for chunk_index in range(len(tmp_output_dirs)):
+                    p = multiprocessing.Process(target=self._run_embedding_subjob,
+                                                args=(tmp_input_smi_paths[chunk_index],
+                                                      tmp_output_sdf_paths[chunk_index],
+                                                      tmp_output_dirs[chunk_index]))
+                    processes.append(p)
+                    p.start()
+                for p in processes:
+                    p.join()
+
+                # add the number of input sublists rather than the output temporary folders to account for cases where
+                # entire sublists failed to produce an input structure
+                sublists_submitted += len(cur_slice_sublists)
+
+                # load and store the conformers; name it sequentially
+                # note, that some backends require the H-coordinates (such as Glide) - so keep them!
+                for path_sdf_results in tmp_output_sdf_paths:
+                    if not os.path.isfile(path_sdf_results):
+                        continue
+                    if os.path.getsize(path_sdf_results) == 0:
+                        self._logger.log(f"skipped output file as it is empty - typically, this indicates errors during OMEGA embedding.",
+                                         _LE.DEBUG)
+                        continue
+
+                    mol_supplier = Chem.SDMolSupplier(path_sdf_results, removeHs=False)
+                    for mol in mol_supplier:
+                        if mol is not None and mol.HasProp("_Name"):
+                            self._logger.log("_Name property value: {}".format(mol.GetProp("_Name")), _LE.DEBUG)
+                            lig_id, enum_conf = mol.GetProp("_Name").split(":")
+                            enum_id, conf_id = enum_conf.split("_")
+                            ligands_embedded.append(
+                                Ligand(smile="", ligand_number=int(lig_id), enumeration=int(enum_id),
+                                        molecule=mol, mol_type=_OE.TYPE_OMEGA))
+                        else:
+                            self._logger.log(f"Skipped molecule when loading as _Name property could not be found - typically, this indicates that OMEGA could not embed the molecule.", _LE.WARNING)
+
+                # remove temporary files
+                for path in tmp_output_dirs:
+                    shutil.rmtree(path, ignore_errors=True)
+                self._log_docking_progress(number_done=sublists_submitted, number_total=number_sublists)
+
+            # update internal (self.ligands) list of ligands with new molecules
+            self._expand_enumerations_new(ligands_embedded)
 
         # check success and failure with embedding
         failed = 0
@@ -303,6 +379,31 @@ class OmegaLigandPreparator(LigandPreparator, BaseModel):
                 #path_tmp_log = os.path.join(tmp_output_dir, file)
                 #self._print_log_file(path=path_tmp_log)
 
+    def _expand_enumerations_new(self, ligands_embedded):
+        # store the generated conformations with the original ligands; if embedding failed, keep the old (emtpy) one
+        # TODO: fix duplication of enumerations!
+        new_ligand_list = []
+        for ligand in self.ligands:
+            # get all embedded conformers with the same ligand and enumeration id
+            ligand_id = ligand.get_ligand_number()
+            enum_id = ligand.get_enumeration()
+            embedded_conformers = []
+            for conformer in ligands_embedded:
+                if conformer.get_ligand_number() == ligand_id and conformer.get_enumeration() == enum_id:
+                    embedded_conformers.append(deepcopy(conformer))
+            if len(embedded_conformers) == 0:
+                # if no enumerations/conformers were generated use the original ligand
+                new_ligand_list.append(ligand)
+            else:
+                # otherwise take all conformers
+                for conformer in embedded_conformers:
+                    buf_lig = deepcopy(ligand)
+                    buf_lig.set_molecule(conformer.get_molecule())
+                    buf_lig.set_mol_type(conformer.get_mol_type())
+                    buf_lig.set_smile(to_smiles(conformer.get_molecule()))
+                    new_ligand_list.append(buf_lig)
+        self.ligands = new_ligand_list
+
     def _expand_enumerations(self, ligands_embedded):
         # store the generated conformations with the original ligands; if embedding failed, keep the old (emtpy) one
         new_ligand_list = []
@@ -319,6 +420,7 @@ class OmegaLigandPreparator(LigandPreparator, BaseModel):
                     buf_lig.set_smile(to_smiles(enum.get_molecule()))
                     new_ligand_list.append(buf_lig)
         self.ligands = new_ligand_list
+
 
     def _print_log_file(self, path):
         if os.path.isfile(path):
