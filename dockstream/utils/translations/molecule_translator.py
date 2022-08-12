@@ -27,14 +27,14 @@ class MoleculeTranslator:
     def get_as_rdkit(self):
         return self._translate_molecules(self._molecules, from_type=self._mol_type, to_type=self._LP.TYPE_RDKIT)
 
-    def get_as_openeye(self):
-        return self._translate_molecules(self._molecules, from_type=self._mol_type, to_type=self._LP.TYPE_OPENEYE)
+    def get_as_openeye(self, bySMILES=False):
+        return self._translate_molecules(self._molecules, from_type=self._mol_type, to_type=self._LP.TYPE_OPENEYE, bySMILES=bySMILES)
 
-    def add_molecules(self, molecules: list):
+    def add_molecules(self, molecules: list, bySMILES=False):
         molecules = [mol.get_clone() for mol in molecules]
         for molecule in molecules:
             mol_type = molecule.get_mol_type()
-            self._molecules = self._molecules + self._translate_molecules([molecule], mol_type, self._mol_type)
+            self._molecules = self._molecules + self._translate_molecules([molecule], mol_type, self._mol_type, bySMILES=bySMILES)
 
     def _translate_molecules(self, molecules, from_type, to_type, bySMILES=False) -> list:
         # TODO: cover case, where conformers have been added

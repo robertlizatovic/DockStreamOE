@@ -1,4 +1,5 @@
 import pandas as pd
+from openeye import oechem
 from dockstream.core.result_parser import ResultParser
 
 from dockstream.utils.enums.OE_Hybrid_enums import OpenEyeHybridOutputKeywordsEnum
@@ -13,6 +14,6 @@ class OpenEyeHybridResultParser(ResultParser):
 
     def _construct_dataframe(self) -> pd.DataFrame:
         def func_get_score(conformer):
-            return float(conformer.GetProp(self._OE.SCORE))
+            return float(oechem.OEGetSDData(conformer, self._OE.SCORE))
 
         return super()._construct_dataframe_with_funcobject(func_get_score)
