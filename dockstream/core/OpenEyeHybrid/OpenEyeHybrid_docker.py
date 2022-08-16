@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Optional, List, Any
 
 import rdkit.Chem as Chem
-from openeye import oechem
+from openeye import oechem, oequacpac
 from pydantic import BaseModel
 from typing_extensions import Literal
 
@@ -44,6 +44,7 @@ class OpenEyeHybridParameters(BaseModel):
     binary_location: Optional[str] = None
     omega_prefix_execution: Optional[str] = "module load omega"
     omega_binary_location : Optional[str] = None
+    quacpac_correction: Optional[bool] = False
     omega_mode: Optional[str] = "pose"
     omega_gpu: Optional[str] = "false"
     receptor_paths: Optional[List[str]] = None
@@ -103,13 +104,32 @@ class OpenEyeHybrid(Docker):
         :raises NotImplementedError: Each backend must override the parent class, docker.py add_molecules method.
             Inability to do so or a bug causing incorrect implementation will raise a NotImplementedError
         """
+        self._logger.log("Adding embedded molecules...", _LE.DEBUG)
         mol_trans = MoleculeTranslator(self.ligands, force_mol_type=_LP.TYPE_OPENEYE)
         mol_trans.add_molecules(molecules, bySMILES=False)
-        self.ligands = mol_trans.get_as_openeye(bySMILES=False) # disregard the initial conformation
+        self.ligands = mol_trans.get_as_openeye(bySMILES=False)
+        self._logger.log("Finished adding molecules.", _LE.DEBUG)
+        self._fix_ligands() # fix ligands prior to conformer expansion / docking
         self._docking_performed = False
+    
+    def _fix_ligands(self):
+        """
+        Uses QUACPAC to get a reasonable protomer (combination of tautomer and ionization state)
+        of each ligand prior to generating conformers and performing docking. Important when these
+        steps are not carried out by the ligand embedding stage.
+        """
+        if self.parameters.quacpac_correction not in [True, False]:
+            raise ValueError(f"{self.parameters.quacpac_correction} flag is not valid. Supported values are:"
+                             f"True, False")
+        else:
+            for ligand in self.ligands:
+                lig_mol = ligand.get_molecule()
+                if (lig_mol is not None) and self.parameters.quacpac_correction:
+                    oequacpac.OEGetReasonableProtomer(lig_mol)
 
     def _generate_temporary_input_output_files(self, start_indices, sublists):
         # in case singletons are handed over, wrap them in a list for "zipping" later
+        self._logger.log("Generating input files for OMEGA and Hybrid...", _LE.DEBUG)
         if not isinstance(start_indices, list):
             start_indices = [start_indices]
         if not isinstance(sublists, list):
@@ -134,7 +154,7 @@ class OpenEyeHybrid(Docker):
                 if ligand.get_molecule() is not None:
                     # set Title and all other SD tags
                     buffer = ligand.get_clone()
-                    buffer.add_tags_to_molecule() 
+                    buffer.add_tags_to_molecule()
                     oechem.OEWriteMolecule(ofs, buffer.get_molecule())
                     one_written = True
             ofs.close()

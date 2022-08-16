@@ -7,7 +7,8 @@ class OpenEyeHybridLigandPreparationEnum(LigandPreparationEnum):
 
     # align using OpenEye's template version, which is set at the receptor building stage
     ALIGN_MODE_OPENEYERECEPTOR = "OpenEye_receptor"
-
+    QUACPAC_CORRECTION = "quacpac_correction"
+    
     # try to find the internal value and return
     def __getattr__(self, name):
         if name in self:

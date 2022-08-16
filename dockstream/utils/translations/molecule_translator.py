@@ -2,6 +2,7 @@ from typing import List
 from dockstream.utils.translations.translation import RDkitMolToOpenEyeMol, OpenEyeMolToRDkitMol
 from dockstream.utils.enums.ligand_preparation_enum import LigandPreparationEnum
 from dockstream.core.ligand.ligand import Ligand
+import logging
 
 
 class MoleculeTranslator:
@@ -23,6 +24,7 @@ class MoleculeTranslator:
         if mol_type not in self._known_types:
             raise ValueError(f"Type {mol_type} not in list of supported types.")
         self._mol_type = mol_type
+        self._logger = logging.getLogger("translator")
 
     def get_as_rdkit(self):
         return self._translate_molecules(self._molecules, from_type=self._mol_type, to_type=self._LP.TYPE_RDKIT)
@@ -32,9 +34,12 @@ class MoleculeTranslator:
 
     def add_molecules(self, molecules: list, bySMILES=False):
         molecules = [mol.get_clone() for mol in molecules]
-        for molecule in molecules:
+        # self._logger.debug("Translating {} molecules...".format(str(len(molecules))))
+        for idx, molecule in enumerate(molecules):
+            # self._logger.debug("Translating molecule {}: {}".format(str(idx + 1), molecule.get_smile()))
             mol_type = molecule.get_mol_type()
             self._molecules = self._molecules + self._translate_molecules([molecule], mol_type, self._mol_type, bySMILES=bySMILES)
+        # self._logger.debug("Finished translating all molecules.")
 
     def _translate_molecules(self, molecules, from_type, to_type, bySMILES=False) -> list:
         # TODO: cover case, where conformers have been added
@@ -43,7 +48,7 @@ class MoleculeTranslator:
         else:
             buffer = []
             for mol in molecules:
-                if (from_type == self._LP.TYPE_RDKIT or from_type == self._LP.TYPE_CORINA or from_type == self._LP.TYPE_LIGPREP) and \
+                if (from_type in [self._LP.TYPE_RDKIT, self._LP.TYPE_CORINA, self._LP.TYPE_LIGPREP, self._LP.TYPE_OMEGA]) and \
                 to_type == self._LP.TYPE_OPENEYE:
                     buffer.append(Ligand(smile=mol.get_smile(), ligand_number=mol.get_ligand_number(),
                                          original_smile=mol.get_original_smile(),
