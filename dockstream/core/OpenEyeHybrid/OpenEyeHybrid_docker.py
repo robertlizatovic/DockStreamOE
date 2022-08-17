@@ -6,7 +6,6 @@ import multiprocessing
 from enum import Enum
 from typing import Optional, List, Any
 
-import rdkit.Chem as Chem
 from openeye import oechem, oequacpac
 from pydantic import BaseModel
 from typing_extensions import Literal
@@ -47,6 +46,7 @@ class OpenEyeHybridParameters(BaseModel):
     quacpac_correction: Optional[bool] = False
     omega_mode: Optional[str] = "pose"
     omega_gpu: Optional[str] = "false"
+    docking_mode: Optional[str] = "fred"
     receptor_paths: Optional[List[str]] = None
     time_limit_per_compound: Optional[int] = None
     parallelization: Optional[Parallelization]
@@ -81,9 +81,11 @@ class OpenEyeHybrid(Docker):
             prefix_execution=self.parameters.prefix_execution,
             binary_location=self.parameters.binary_location
         )
-        if not self._OpenEyeHybrid_executor.is_available():
-            raise DockingRunFailed("Cannot initialize OpenEye Hybrid docker, as OpenEye Hybrid backend is not available - abort.")
-        self._logger.log(f"Checked OpenEye Hybrid backend availability (prefix_execution={self.parameters.prefix_execution}).", _LE.DEBUG)
+        if not self._OpenEyeHybrid_executor.is_available(self.parameters.docking_mode):
+            raise DockingRunFailed("Cannot initialize OpenEye {} docker, as OpenEye {} backend is not available - abort.".format(
+                self.parameters.docking_mode, self.parameters.docking_mode))
+        self._logger.log("Checked OpenEye {} backend availability (prefix_execution={}).".format(
+            self.parameters.docking_mode, self.parameters.prefix_execution), _LE.DEBUG)
 
     def _check_Omega_backend_availability(self):
         self._omega_executor = OmegaExecutor(
@@ -219,7 +221,10 @@ class OpenEyeHybrid(Docker):
                 # need to read mols as single conformer OEGraphMol objects because SD data is only readily available for this OEMol type 
                 for molecule in ifs.GetOEGraphMols():
                     conformer = oechem.OEGraphMol(molecule)
-                    # dock_score = oechem.OEGetSDData(conformer, _OE.SCORE)
+                    # if self.parameters.docking_mode == _EE.FRED:
+                    #     dock_score = oechem.OEGetSDData(conformer, _OE.FRED_SCORE)
+                    # else:
+                    #     dock_score = oechem.OEGetSDData(conformer, _OE.HYBRID_SCORE)
                     cur_conformer_name = conformer.GetTitle().split("_")[0]
                     # self._logger.log("Read docked conformer {} with docking score {}".format(cur_conformer_name, dock_score), _LE.DEBUG)
                     # add molecule to the appropriate ligand
@@ -246,7 +251,8 @@ class OpenEyeHybrid(Docker):
         self._docking_fail_check()
 
         # parse the result of the docking step
-        result_parser = OpenEyeHybridResultParser(ligands=[ligand.get_clone() for ligand in self.ligands])
+        result_parser = OpenEyeHybridResultParser(ligands=[ligand.get_clone() for ligand in self.ligands], 
+            docking_mode=self.parameters.docking_mode)
         self._df_results = result_parser.as_dataframe()
 
         # set docking flag
@@ -302,16 +308,16 @@ class OpenEyeHybrid(Docker):
         arguments = [_EE.RECEPTOR, oeb_paths[0],
                      _EE.DBASE, omega_oeb_path,
                      _EE.DOCKED_MOLECULE_FILE, output_sdf_path,
-                     _EE.UNDOCKED_MOLECULES_FILE, output_dir,
-                     _EE.SCORE_FILE, output_dir,
-                     _EE.REPORT_FILE, output_dir,
-                     _EE.SETTINGS_FILE, output_dir,
-                     _EE.STATUS_FILE, output_dir,
+                    #  _EE.UNDOCKED_MOLECULES_FILE, output_dir,
+                    #  _EE.SCORE_FILE, output_dir,
+                    #  _EE.REPORT_FILE, output_dir,
+                    #  _EE.SETTINGS_FILE, output_dir,
+                    #  _EE.STATUS_FILE, output_dir,
                      _EE.DOCK_RESOLUTION, self.parameters.resolution.value,
                      _EE.NUM_POSES, self.parameters.number_poses
                      ]
 
-        execution_result = self._OpenEyeHybrid_executor.execute(command=_EE.HYBRID,
+        execution_result = self._OpenEyeHybrid_executor.execute(command=self.parameters.docking_mode,
                                                                 arguments=arguments,
                                                                 check=False)
         self._delay4file_system(path=output_sdf_path)
@@ -367,7 +373,12 @@ class OpenEyeHybrid(Docker):
         return self._write_result(path=path, mode=mode, best="min")
 
     def _get_score_from_conformer(self, conformer):
-        return float(oechem.OEGetSDData(conformer, _OE.SCORE))
+        if self.parameters.docking_mode == _EE.HYBRID:
+            return float(oechem.OEGetSDData(conformer, _OE.HYBRID_SCORE))
+        elif self.parameters.docking_mode == _EE.FRED:
+            return float(oechem.OEGetSDData(conformer, _OE.FRED_SCORE))
+        else:
+            return None
 
     def _sort_conformers(self, conformers: list, best=None) -> list:
         return super()._sort_conformers(conformers=conformers, best="min")
