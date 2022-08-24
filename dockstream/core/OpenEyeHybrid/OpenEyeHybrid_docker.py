@@ -41,7 +41,7 @@ class Resolution(str, Enum):
 class OpenEyeHybridParameters(BaseModel):
     prefix_execution: Optional[str] = None
     binary_location: Optional[str] = None
-    omega_prefix_execution: Optional[str] = "module load omega"
+    omega_prefix_execution: Optional[str] = None
     omega_binary_location : Optional[str] = None
     quacpac_correction: Optional[bool] = False
     omega_mode: Optional[str] = "pose"
