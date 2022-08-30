@@ -314,7 +314,8 @@ class OpenEyeHybrid(Docker):
                     #  _EE.SETTINGS_FILE, output_dir,
                     #  _EE.STATUS_FILE, output_dir,
                      _EE.DOCK_RESOLUTION, self.parameters.resolution.value,
-                     _EE.NUM_POSES, self.parameters.number_poses
+                     _EE.NUM_POSES, self.parameters.number_poses,
+                     _EE.NO_EXTRA_OUTPUT_FILES
                      ]
 
         execution_result = self._OpenEyeHybrid_executor.execute(command=self.parameters.docking_mode,
