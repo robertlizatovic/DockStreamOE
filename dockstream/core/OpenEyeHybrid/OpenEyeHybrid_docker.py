@@ -51,7 +51,8 @@ class OpenEyeHybridParameters(BaseModel):
     time_limit_per_compound: Optional[int] = None
     parallelization: Optional[Parallelization]
     resolution: Resolution = Resolution.STANDARD
-    number_poses: int = 1
+    number_poses: Optional[int] = 1
+    hitlist_size: Optional[int] = 0
 
     def get(self, key: str) -> Any:
         """Temporary method to support nested_get"""
@@ -315,6 +316,7 @@ class OpenEyeHybrid(Docker):
                     #  _EE.STATUS_FILE, output_dir,
                      _EE.DOCK_RESOLUTION, self.parameters.resolution.value,
                      _EE.NUM_POSES, self.parameters.number_poses,
+                     _EE.HITLIST_SIZE, self.parameters.hitlist_size,
                      _EE.NO_EXTRA_OUTPUT_FILES
                      ]
 
