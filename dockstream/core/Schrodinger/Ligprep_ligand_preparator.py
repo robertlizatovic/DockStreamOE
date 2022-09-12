@@ -309,7 +309,8 @@ class LigprepLigandPreparator(LigandPreparator, BaseModel):
 
             # remove temporary files
             for path in tmp_output_dirs:
-                shutil.rmtree(path)
+                # shutil.rmtree(path)
+                shutil.rmtree(path, ignore_errors=True)
             self._log_docking_progress(number_done=sublists_submitted, number_total=number_sublists)
 
         # check success and failure with embedding

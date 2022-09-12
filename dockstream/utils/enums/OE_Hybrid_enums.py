@@ -7,7 +7,8 @@ class OpenEyeHybridLigandPreparationEnum(LigandPreparationEnum):
 
     # align using OpenEye's template version, which is set at the receptor building stage
     ALIGN_MODE_OPENEYERECEPTOR = "OpenEye_receptor"
-
+    QUACPAC_CORRECTION = "quacpac_correction"
+    
     # try to find the internal value and return
     def __getattr__(self, name):
         if name in self:
@@ -46,12 +47,14 @@ class OpenEyeHybridExecutablesEnum:
     OE_HYBRID_MODULE_LOAD = "module load oedocking"
 
     HYBRID = "hybrid"
+    FRED = "fred"
     OE_HYBRID_HELP_SIMPLE = "--help simple"   # returns simple list of parameters
     OE_HYBRID_HELP_ALL = "--help all"    # returns complete list of parameters
     OE_HYBRID_HELP_DEFAULTS = "--help defaults"   # returns the default values for all parameters
     OE_HYBRID_HELP_HTML = "--help html"   # creates an html help file for OE Hybrid
     OE_HYBRID_HELP_VERSIONS = "--help versions"   # lists toolkits and versions used for OE Hybrid
     OE_HYBRID_HELP_IDENTIFICATION_STRING = "To cite HYBRID"   # string to identify whether OE Hybrid is available for a docking job
+    OE_FRED_HELP_IDENTIFICATION_STRING = "To cite FRED"   # string to identify whether OE FRED is available for a docking job
     # required parameters
     # -------------------
     RECEPTOR = "-receptor"   # required: receptor file for docking. Must contain bound ligand
@@ -153,7 +156,8 @@ class OpenEyeHybridOutputKeywordsEnum:
     # there are 6 default output files by default and in some cases (e.g. docked poses), the file
     # extension provided denotes the output format
 
-    SCORE = "HYBRID Chemgauss4 score"
+    HYBRID_SCORE = "HYBRID Chemgauss4 score"
+    FRED_SCORE = "FRED Chemgauss4 score"
 
     DOCKED_MOLECULES_SDF_OUTPUT = "docked_molecules.sdf"   # specifying sdf here removes need for OpenBabel conversion of oeb to sdf
     UNDOCKED_MOLECULES_SDF_OUTPUT = "undocked_molecules.sdf"   # specifying sdf here removes need for OpenBabel conversion of oeb to sdf

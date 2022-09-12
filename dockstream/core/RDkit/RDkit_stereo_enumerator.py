@@ -12,7 +12,7 @@ from dockstream.core.ligand.ligand import Ligand, get_next_enumeration_number_fo
 
 
 class RDKitStereoEnumeratorParameters(BaseModel):
-    try_embedding: bool = True
+    try_embedding: bool = False
     unique: bool = True
     max_isomers: int = 1024
     rand: Optional[int] = 0xf00d

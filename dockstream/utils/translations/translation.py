@@ -6,10 +6,36 @@ import openeye.oechem as oechem
 from dockstream.utils.smiles import to_smiles, to_mol
 
 
+def RDkitMolToOpenEyeMol(molecule: Chem.Mol, bySMILES: bool):
+    """Creates an OpenEye molecule object that is identical to the input RDkit molecule."""
+    # create an OE molecule
+    oemol = oechem.OEMol()
+    
+    # if "bySMILES" is True, simply do: rdkit molecule -> SMILE -> openeye molecule
+    if bySMILES:
+        if oechem.OESmilesToMol(oemol, to_smiles(molecule)):
+            return oemol
+        else:
+            return None
+
+    # otherwise convert to OE format using the Mol block string
+    ifs = oechem.oemolistream()
+    ifs.SetFormat(oechem.OEFormat_SDF)
+    ifs.openstring(Chem.MolToMolBlock(molecule))
+    if oechem.OEReadMolecule(ifs, oemol):
+        # percieve aromaticity
+        oechem.OEAssignAromaticFlags(oemol)
+        ifs.close()
+        return oemol
+    else:
+        # could not convert
+        ifs.close()
+        return None
+
+
 # This code is taken from Caitlin Bannan, Application Scienist at OpenEye (gist.github.com/bannanc)
 # No license specified
-
-def RDkitMolToOpenEyeMol(molecule: Chem.Mol, bySMILES: bool):
+def RDkitMolToOpenEyeMol_old(molecule: Chem.Mol, bySMILES: bool):
     """Creates an OpenEye molecule object that is identical to the input RDkit molecule."""
 
     # if "bySMILES" is True, simply do: rdkit molecule -> SMILE -> openeye molecule
